@@ -14,24 +14,22 @@ namespace StreamCompaction {
             return timer;
         }
 
-		__global__ void kernUpSweep(int n, int d, int* a) {
+		__global__ void kernUpSweep(int n, int off1, int off2, int* a) {
 			int idx = threadIdx.x + (blockIdx.x * blockDim.x);
-			int offset = (int)powf(2, d + 1);
-			if (idx % offset != 0 || idx >= n - 1) {
+			if (idx % off1 != 0 || idx >= n - 1) {
 				return;
 			}
-			a[idx + (int)powf(2, d + 1) - 1] += a[idx + (int)powf(2, d) - 1];
+			a[idx + off1 - 1] += a[idx + off2 - 1];
 		}	
 
-		__global__ void kernDownSweep(int n, int d, int* a) {
+		__global__ void kernDownSweep(int n, int off1, int off2, int* a) {
 			int idx = threadIdx.x + (blockIdx.x * blockDim.x);
-			int offset = (int)powf(2, d + 1);
-			if (idx % offset != 0 || idx >= n - 1) {
+			if (idx % off1 != 0 || idx >= n - 1) {
 				return;
 			}
-			int t = a[idx + (int)powf(2, d) - 1];
-			a[idx + (int)powf(2, d) - 1] = a[idx + (int)powf(2, d + 1) - 1];
-			a[idx + (int)powf(2, d + 1) - 1] += t;
+			int t = a[idx + off2 - 1];
+			a[idx + off2 - 1] = a[idx + off1 - 1];
+			a[idx + off1 - 1] += t;
 		}
 
         /**
@@ -47,13 +45,17 @@ namespace StreamCompaction {
 			timer().startGpuTimer();
 
 			for (int d = 0; d <= dmax; ++d) {
-				kernUpSweep<<<fullBlocksPerGrid, blocksize>>>(n, d, cudaA);
+				int off1 = (int)pow(2, d + 1);
+				int off2 = (int)pow(2, d);
+				kernUpSweep<<<fullBlocksPerGrid, blocksize>>>(n, off1, off2, cudaA);
 			}
 			int temp[1] = { 0 };
 			cudaMemcpy(cudaA + (n - 1), temp, 1 * sizeof(int), cudaMemcpyHostToDevice);
 			// DOWNSWEEP
 			for (int d = dmax; d >= 0; d--) {
-				kernDownSweep<<<fullBlocksPerGrid, blocksize>>>(n, d, cudaA);
+				int off1 = (int)pow(2, d + 1);
+				int off2 = (int)pow(2, d);
+				kernDownSweep<<<fullBlocksPerGrid, blocksize>>>(n, off1, off2, cudaA);
 			}
 
 			timer().endGpuTimer();
@@ -116,13 +118,17 @@ namespace StreamCompaction {
 			int dmax = ilog2ceil(n) - 1;
 
 			for (int d = 0; d <= dmax; ++d) {
-				kernUpSweep<<<fullBlocksPerGrid, blocksize>>>(n, d, devBinaryCopy);
+				int off1 = (int)pow(2, d + 1);
+				int off2 = (int)pow(2, d);
+				kernUpSweep<<<fullBlocksPerGrid, blocksize>>>(n, off1, off2, devBinaryCopy);
 			}
 			int temp[1] = { 0 };
 			cudaMemcpy(devBinaryCopy + (n - 1), temp, 1 * sizeof(int), cudaMemcpyHostToDevice);
 			// DOWNSWEEP
 			for (int d = dmax; d >= 0; d--) {
-				kernDownSweep<<<fullBlocksPerGrid, blocksize>>>(n, d, devBinaryCopy);
+				int off1 = (int)pow(2, d + 1);
+				int off2 = (int)pow(2, d);
+				kernDownSweep<<<fullBlocksPerGrid, blocksize>>>(n, off1, off2, devBinaryCopy);
 			}
 
 			// populating compact return array
